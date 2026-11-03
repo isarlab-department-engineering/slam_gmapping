@@ -21,6 +21,8 @@
 // Created by shivesh on 29/10/18.
 //
 
+#include <cmath>
+#include <vector>
 #include "slam_gmapping/slam_gmapping.h"
 
 #include "tf2_ros/create_timer_ros.h"
@@ -160,6 +162,8 @@ bool SlamGmapping::getOdomPose(GMapping::OrientedPoint& gmap_pose, const rclcpp:
 
 bool SlamGmapping::initMapper(const sensor_msgs::msg::LaserScan::ConstSharedPtr scan)
 {
+    if (scan->ranges.size() < 2)
+        return false;
     laser_frame_ = scan->header.frame_id;
     // Get the laser's pose, relative to base.
     geometry_msgs::msg::PoseStamped ident;
@@ -306,40 +310,33 @@ bool SlamGmapping::addScan(const sensor_msgs::msg::LaserScan::ConstSharedPtr sca
     if (!getOdomPose(gmap_pose, scan->header.stamp))
         return false;
 
-    if (scan->ranges.size() != gsp_laser_beam_count_)
+    const size_t n_in = scan->ranges.size();
+    if (n_in < 2 || gsp_laser_beam_count_ < 2) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Empty or too short scan, skipping");
         return false;
-
-    // GMapping wants an array of doubles...
-    auto *ranges_double = new double[scan->ranges.size()];
-    // If the angle increment is negative, we have to invert the order of the readings.
-    if (do_reverse_range_) {
-        RCLCPP_DEBUG(this->get_logger(), "Inverting scan");
-        int num_ranges = static_cast<int>(scan->ranges.size());
-        for (int i = 0; i < num_ranges; i++) {
-            // Must filter out short readings, because the mapper won't
-            if (scan->ranges[num_ranges - i - 1] < scan->range_min)
-                ranges_double[i] = (double) scan->range_max;
-            else
-                ranges_double[i] = (double) scan->ranges[num_ranges - i - 1];
-        }
-    } else {
-        for (unsigned int i = 0; i < scan->ranges.size(); i++) {
-            // Must filter out short readings, because the mapper won't
-            if (scan->ranges[i] < scan->range_min)
-                ranges_double[i] = (double) scan->range_max;
-            else
-                ranges_double[i] = (double) scan->ranges[i];
-        }
     }
 
-    GMapping::RangeReading reading(static_cast<unsigned int>(scan->ranges.size()),
-                                   ranges_double,
+    // The number of beams may change between scans: resample to the size used at init.
+    // NaN/inf/short readings are replaced with range_max, which the mapper treats as "no hit".
+    std::vector<double> ranges_double(gsp_laser_beam_count_);
+    for (unsigned int i = 0; i < gsp_laser_beam_count_; i++) {
+        size_t src = (n_in == gsp_laser_beam_count_)
+                     ? i
+                     : static_cast<size_t>(std::lround(static_cast<double>(i) * (n_in - 1) / (gsp_laser_beam_count_ - 1)));
+        // If the angle increment is negative, we have to invert the order of the readings.
+        if (do_reverse_range_)
+            src = n_in - 1 - src;
+        const float r = scan->ranges[src];
+        if (!std::isfinite(r) || r < scan->range_min || r > scan->range_max)
+            ranges_double[i] = static_cast<double>(scan->range_max);
+        else
+            ranges_double[i] = static_cast<double>(r);
+    }
+
+    GMapping::RangeReading reading(gsp_laser_beam_count_,
+                                   ranges_double.data(),
                                    gsp_laser_,
                                    scan->header.stamp.sec);
-
-    // ...but it deep copies them in RangeReading constructor, so we don't
-    // need to keep our array around.
-    delete[] ranges_double;
 
     reading.setPose(gmap_pose);
 
@@ -403,13 +400,13 @@ double SlamGmapping::computePoseEntropy()
     return -entropy;
 }
 
-void SlamGmapping::updateMap(const sensor_msgs::msg::LaserScan::ConstSharedPtr scan)
+void SlamGmapping::updateMap(const sensor_msgs::msg::LaserScan::ConstSharedPtr /*scan*/)
 {
     RCLCPP_DEBUG(this->get_logger(), "Update map");
     map_mutex_.lock();
     GMapping::ScanMatcher matcher;
 
-    matcher.setLaserParameters(static_cast<unsigned int>(scan->ranges.size()), &(laser_angles_[0]),
+    matcher.setLaserParameters(gsp_laser_beam_count_, &(laser_angles_[0]),
                                gsp_laser_->getPose());
 
     matcher.setlaserMaxRange(maxRange_);

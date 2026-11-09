@@ -1,0 +1,50 @@
+# Stessi valori dell'algoritmo della versione originale di slam_gmapping
+# (i parametri di visualizzazione sono quelli della versione didattica).
+#
+# Uso: ros2 launch slam_gmapping_didactic slam_gmapping_didactic.launch.py config:=originale
+slam_gmapping_didactic:
+  ros__parameters:
+    # --- Quando aggiornare il filtro (scan matching, pesi, ricampionamento) ---
+    # Distanza percorsa dal robot tra due aggiornamenti, in metri
+    linearUpdate: 1.0
+    # Rotazione del robot tra due aggiornamenti, in radianti (0.5 rad = circa 29 gradi)
+    angularUpdate: 0.5
+    # Intervallo di tempo tra due aggiornamenti, in secondi (valore negativo = disattivato)
+    temporalUpdate: 1.0
+
+    # --- Filtro a particelle ---
+    particles: 30
+    # Ricampionamento quando Neff < resampleThreshold * particles
+    resampleThreshold: 0.5
+    # Guadagno delle osservazioni: piu' basso = pesi piu' netti (una scansione conta di piu')
+    ogain: 3.0
+
+    # --- Rumore del modello di moto ---
+    srr: 0.1   # traslazione dovuta a traslazione
+    srt: 0.2   # rotazione dovuta a traslazione
+    str: 0.1   # traslazione dovuta a rotazione
+    stt: 0.2   # rotazione dovuta a rotazione
+
+    # --- Ripetibilita' ---
+    # Seme casuale: 0 = diverso a ogni avvio, valore fisso = esecuzioni ripetibili
+    seed: 0
+
+    # --- Visualizzazione didattica ---
+    particles_z: 0.25             # altezza (m) delle particelle in RViz2
+    publish_particle_maps: true     # mappe delle particelle con peso max e min
+    particle_maps_full: true        # true = complete, false = interne (solo ostacoli)
+    map_best_green: true          # ostacoli della mappa della particella migliore in verde
+    publish_tree: true            # albero delle traiettorie di tutte le particelle
+    ellipse_sigma: 2.0            # semiassi dell'ellisse di incertezza, in deviazioni standard
+
+    # --- Odometria con deriva artificiale (passo 6) ---
+    # false = odometria del simulatore (quasi perfetta); true = avvia il nodo odom_drift
+    odom_drift: false
+    publish_odometry_map: true    # mappa costruita con la sola odometria
+    drift_trans_scale: 0.03       # errore di scala sulla distanza (0.03 = +3%)
+    drift_rot_scale: 0.05         # errore di scala sulle rotazioni (0.05 = +5%)
+    drift_rot_per_meter: 0.02     # deriva dell'orientamento, rad per metro percorso
+    drift_trans_noise: 0.01       # rumore sulla traslazione, m per radice di metro
+    drift_rot_noise: 0.01         # rumore sull'orientamento, rad per radice di metro
+    drift_seed: 7                 # seme casuale (0 = diverso a ogni avvio)
+    drift_base_frame: base_footprint
